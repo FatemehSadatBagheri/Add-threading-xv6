@@ -135,9 +135,9 @@ memmove(void *vdst, const void *vsrc, int n)
 //   return clone(func, arg1, arg2, stack);
 // }
 
-// int thread_join()
-// {
-//   void * stackPtr;
-//   int x = join(&stackPtr);
-//   return x;
-// }
+int thread_join()
+{
+  void * stackPtr;
+  int x = join(&stackPtr);
+  return x;
+}
