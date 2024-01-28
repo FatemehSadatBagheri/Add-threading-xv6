@@ -119,11 +119,25 @@ memmove(void *vdst, const void *vsrc, int n)
 //     return clone(function, arg, stack);
 // }
 
-int thread_join(int tid)
-{
-    int retval;
-    void *stack;
-    retval = join(tid, &stack);
-    // free(stack);
-    return retval;
-}
+// int thread_join(int tid)
+// {
+//     int retval;
+//     void *stack;
+//     retval = join(tid, &stack);
+//     // free(stack);
+//     return retval;
+// }
+
+// int thread_create(void (*func)(void *, void *), void* arg1, void* arg2)
+// {
+//   void* stack;
+//   stack = malloc(PGSIZE);
+//   return clone(func, arg1, arg2, stack);
+// }
+
+// int thread_join()
+// {
+//   void * stackPtr;
+//   int x = join(&stackPtr);
+//   return x;
+// }
