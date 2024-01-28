@@ -533,103 +533,93 @@ procdump(void)
   }
 }
 
-int
-clone(void (*function)(void*), void* arg, void* stack)
+int 
+clone(void(*fcn)(void*,void*), void *arg1, void *arg2, void* stack)
 {
-  int i, pid;
-  struct proc *np;
-  struct proc *curproc = myproc();
+  struct proc *new_proc;
+  struct proc *p = myproc();
 
-  // Allocate process.
-  if((np = allocproc()) == 0){
+  if((new_proc = allocproc()) == 0) //process allocation
     return -1;
-  }
 
-  // <Code for new thread>
+  new_proc->pgdir = p->pgdir;
+  new_proc->sz = p->sz;
+  new_proc->parent = p;
+  *new_proc->tf = *p->tf;  //copy process data to the new thread
+  
+  void * sarg1, *sarg2, *sret;
 
-  // Copy process data to new process with page table address
-  np->sz = curproc->sz;
-  np->pgdir = curproc->pgdir;
-  np->parent = curproc;
-  *np->tf = *curproc->tf;
+  sret = stack + PGSIZE - 3 * sizeof(void *);
+  *(uint*)sret = 0xFFFFFFF; // push return address to stack
 
-  // Stack pointer is at the bottom, bring it up; push return
-  // address and arg
-  *(uint*)(stack + PGSIZE - 1 * sizeof(void *)) = (uint)arg;
-  *(uint*)(stack + PGSIZE - 2 * sizeof(void *)) = 0xFFFFFFFF;
+  sarg1 = stack + PGSIZE - 2 * sizeof(void *);
+  *(uint*)sarg1 = (uint)arg1; //push first argument to stack
 
-  // Set esp (stack pointer register) and ebp (stack base register)
-  // eip (instruction pointer register)
-  np->tf->esp = (uint)stack + PGSIZE - 2 * sizeof(void*);
-  np->tf->ebp = np->tf->esp;
-  np->tf->eip = (uint) function;
+  sarg2 = stack + PGSIZE - 1 * sizeof(void *);
+  *(uint*)sarg2 = (uint)arg2; //push second argument to stack
 
-  // Set thread stack
-  np->tstack = stack;
+  new_proc->tf->esp = (uint) stack; //put address of new stack in the stack pointer(ESP)
+  new_proc->threadstack = stack; //save address of stack
+  new_proc->tf->esp += PGSIZE - 3 * sizeof(void*);
+  new_proc->tf->ebp = new_proc->tf->esp; //set stack pointer to address
+  new_proc->tf->eip = (uint) fcn; //set instruction pointer to function
+  new_proc->tf->eax = 0; //set eax so fork returns 0 in the child
 
-  // </Code for new thread>
-
-  // Clear %eax so that fork returns 0 in the child.
-  np->tf->eax = 0;
-
+  int i;
   for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
-
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
-
-  pid = np->pid;
-
+    if(p->ofile[i])
+      new_proc->ofile[i] = filedup(p->ofile[i]);
+  new_proc->cwd = idup(p->cwd);
+  safestrcpy(new_proc->name, p->name, sizeof(p->name));
   acquire(&ptable.lock);
-
-  np->state = RUNNABLE;
-
+  new_proc->state = RUNNABLE;
   release(&ptable.lock);
-
-  return pid;
+  return new_proc->pid;
 }
 
+
 int
-join(int tid, void** stack)
+join(void** stack)
 {
   struct proc *p;
-  int havekids, pid;
-  struct proc *curproc = myproc();
-  
+  int kids, pid;
+  struct proc *procs = myproc();
   acquire(&ptable.lock);
-  for(;;){
-    // Scan through table looking for exited children.
-    havekids = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc || p->pgdir != curproc->pgdir || p->pid != tid)
-        continue;
-      havekids = 1;
-      if(p->state == ZOMBIE){
-        // Found one.
+  //check to see if any zombie childern
+  for(;;)
+  {
+    kids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) 
+    {
+
+      if(p->parent != procs || p->pgdir != p->parent->pgdir)
+        continue;//check if a child thread
+        
+      kids = 1;
+      if(p->state == ZOMBIE)
+      {
         pid = p->pid;
         kfree(p->kstack);
-        p->kstack = 0;
-        *stack = p->tstack;
-        p->tstack = 0;
+        p->kstack = 0;//remove zombie child thread from k_stack
+
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
-        
+        stack = p->threadstack;
+        p->threadstack = 0; //reset thread in process table
+
         release(&ptable.lock);
         return pid;
       }
     }
-
-    // No point waiting if we don't have any children.
-    if(!havekids || curproc->killed){
+    if(!kids || procs->killed)
+    {
+      //if no child then don't wait
       release(&ptable.lock);
       return -1;
     }
-
-    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+    sleep(procs, &ptable.lock); //if child wait to exit
   }
 }

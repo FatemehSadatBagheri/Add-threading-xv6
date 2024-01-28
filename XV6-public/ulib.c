@@ -4,6 +4,8 @@
 #include "user.h"
 #include "x86.h"
 #include "mmu.h"
+
+
 char*
 strcpy(char *s, const char *t)
 {
@@ -105,23 +107,23 @@ memmove(void *vdst, const void *vsrc, int n)
   return vdst;
 }
 
-int thread_create(void (*function) (void *), void *arg)
-{
-    void *stack = malloc(PGSIZE);
+// int thread_create(void (*function) (void *), void *arg)
+// {
+//     void *stack = malloc(PGSIZE);
 
-    if (stack == 0)
-        return -1;
-    if ((uint)stack % PGSIZE != 0)
-        stack += PGSIZE - ((uint)stack % PGSIZE);
+//     if (stack == 0)
+//         return -1;
+//     if ((uint)stack % PGSIZE != 0)
+//         stack += PGSIZE - ((uint)stack % PGSIZE);
     
-    return clone(function, arg, stack);
-}
+//     return clone(function, arg, stack);
+// }
 
 int thread_join(int tid)
 {
     int retval;
     void *stack;
     retval = join(tid, &stack);
-    free(stack);
+    // free(stack);
     return retval;
 }
