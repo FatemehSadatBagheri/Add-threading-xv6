@@ -442,3 +442,33 @@ sys_pipe(void)
   fd[1] = fd1;
   return 0;
 }
+int
+sys_clone(void)
+{
+  int function, arg, stack;
+
+  if(argint(0, &function) < 0)
+    return -1;
+
+  if(argint(1, &arg) < 0)
+    return -1;
+
+  if(argint(2, &stack) < 0)
+    return -1;
+  
+  return clone((void *)function, (void *)arg, (void *)stack);
+}
+
+int
+sys_join(void)
+{
+  int tid, stack;
+
+  if(argint(0, &tid) < 0)
+    return -1;
+
+  if(argint(1, &stack) < 0)
+    return -1;
+
+  return join(tid, (void **)stack);
+}
