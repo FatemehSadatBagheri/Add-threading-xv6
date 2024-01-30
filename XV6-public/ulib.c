@@ -4,7 +4,9 @@
 #include "user.h"
 #include "x86.h"
 #include "mmu.h"
+// #include "umalloc.c"
 
+typedef unsigned int lock_t;
 
 char*
 strcpy(char *s, const char *t)
@@ -107,37 +109,35 @@ memmove(void *vdst, const void *vsrc, int n)
   return vdst;
 }
 
-// int thread_create(void (*function) (void *), void *arg)
-// {
-//     void *stack = malloc(PGSIZE);
+void lock_init(uint *lock){
+    xchg(lock, 0);
+}
+ 
+void lock_acquire(uint *lock){
+    while (xchg(lock, 1) == 1);
+}
+ 
+void lock_release(uint *lock){
+    xchg(lock, 0);
+}
 
-//     if (stack == 0)
-//         return -1;
-//     if ((uint)stack % PGSIZE != 0)
-//         stack += PGSIZE - ((uint)stack % PGSIZE);
-    
-//     return clone(function, arg, stack);
-// }
-
-// int thread_join(int tid)
-// {
-//     int retval;
-//     void *stack;
-//     retval = join(tid, &stack);
-//     // free(stack);
-//     return retval;
-// }
-
-// int thread_create(void (*func)(void *, void *), void* arg1, void* arg2)
-// {
-//   void* stack;
-//   stack = malloc(PGSIZE);
-//   return clone(func, arg1, arg2, stack);
-// }
-
-int thread_join()
-{
-  void * stackPtr;
-  int x = join(&stackPtr);
-  return x;
+int thread_create(void *(*start_routine)(void*), void *arg){
+    void *stack = malloc(PGSIZE);
+    if((uint)stack <= 0){
+        printf(2, "Stack allocation to thread using malloc failed in thread_create!\n");
+        return -1;
+    }
+    int cid = clone(stack, PGSIZE);
+    if (cid == 0){
+        (*start_routine)(arg);
+        free(stack);
+        exit();
+    }
+    else{
+        return cid;
+    }
+}
+ 
+int thread_join(void){
+    return join();
 }

@@ -533,93 +533,92 @@ procdump(void)
   }
 }
 
-int 
-clone(void(*fcn)(void*,void*), void *arg1, void *arg2, void* stack)
-{
-  struct proc *new_proc;
-  struct proc *p = myproc();
-
-  if((new_proc = allocproc()) == 0) //process allocation
-    return -1;
-
-  new_proc->pgdir = p->pgdir;
-  new_proc->sz = p->sz;
-  new_proc->parent = p;
-  *new_proc->tf = *p->tf;  //copy process data to the new thread
-  
-  void * sarg1, *sarg2, *sret;
-
-  sret = stack + PGSIZE - 3 * sizeof(void *);
-  *(uint*)sret = 0xFFFFFFF; // push return address to stack
-
-  sarg1 = stack + PGSIZE - 2 * sizeof(void *);
-  *(uint*)sarg1 = (uint)arg1; //push first argument to stack
-
-  sarg2 = stack + PGSIZE - 1 * sizeof(void *);
-  *(uint*)sarg2 = (uint)arg2; //push second argument to stack
-
-  new_proc->tf->esp = (uint) stack; //put address of new stack in the stack pointer(ESP)
-  new_proc->threadstack = stack; //save address of stack
-  new_proc->tf->esp += PGSIZE - 3 * sizeof(void*);
-  new_proc->tf->ebp = new_proc->tf->esp; //set stack pointer to address
-  new_proc->tf->eip = (uint) fcn; //set instruction pointer to function
-  new_proc->tf->eax = 0; //set eax so fork returns 0 in the child
-
-  int i;
-  for(i = 0; i < NOFILE; i++)
-    if(p->ofile[i])
-      new_proc->ofile[i] = filedup(p->ofile[i]);
-  new_proc->cwd = idup(p->cwd);
-  safestrcpy(new_proc->name, p->name, sizeof(p->name));
-  acquire(&ptable.lock);
-  new_proc->state = RUNNABLE;
-  release(&ptable.lock);
-  return new_proc->pid;
-}
 
 
 int
-join(void** stack)
+clone(void *stack, int size)
+{
+  int i, tid;
+  struct proc *nt;
+  struct proc *curproc = myproc();
+
+  // Allocate process(thread)
+  if ((nt = allocproc()) == 0){
+    return -1;
+  }
+
+  // Copy process state from proc.
+  nt->pgdir = curproc->pgdir;
+  nt->sz = curproc->sz;
+  nt->parent = curproc;
+  *nt->tf = *curproc->tf;
+
+  // Clear %eax so that clone returns 0 in the child.
+  nt->tf->eax = 0;
+
+  // Calculate stack size
+  uint new_size = (uint)((void*)curproc->tf->ebp - (void*)curproc->tf->esp);
+  nt->tf->esp = (uint)(stack + size - new_size);
+  memmove((void*)(nt->tf->esp), (void*)(curproc->tf->esp), new_size); 
+
+  for (i = 0; i < NOFILE; i++)
+    if (curproc->ofile[i])
+      nt->ofile[i] = filedup(curproc->ofile[i]);
+  nt->cwd = idup(curproc->cwd);
+
+  safestrcpy(nt->name, curproc->name, sizeof(curproc->name));
+
+  tid = nt->pid;
+
+  acquire(&ptable.lock);
+  
+  nt->state = RUNNABLE;
+
+  release(&ptable.lock);
+
+  return tid;
+}
+
+
+
+int
+join(void)
 {
   struct proc *p;
-  int kids, pid;
-  struct proc *procs = myproc();
+  int havekids, pid;
+  struct proc *curproc = myproc();
+ 
   acquire(&ptable.lock);
-  //check to see if any zombie childern
-  for(;;)
-  {
-    kids = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) 
-    {
-
-      if(p->parent != procs || p->pgdir != p->parent->pgdir)
-        continue;//check if a child thread
-        
-      kids = 1;
-      if(p->state == ZOMBIE)
-      {
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one;
         pid = p->pid;
         kfree(p->kstack);
-        p->kstack = 0;//remove zombie child thread from k_stack
-
+        p->kstack = 0;
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
-        stack = p->threadstack;
-        p->threadstack = 0; //reset thread in process table
-
         release(&ptable.lock);
         return pid;
       }
     }
-    if(!kids || procs->killed)
-    {
-      //if no child then don't wait
+ 
+    // No point waiting if we don't have any children.
+    if(!havekids || curproc->killed){
       release(&ptable.lock);
       return -1;
     }
-    sleep(procs, &ptable.lock); //if child wait to exit
+ 
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+ 
